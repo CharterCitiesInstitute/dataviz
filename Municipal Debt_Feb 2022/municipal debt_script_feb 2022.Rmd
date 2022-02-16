@@ -1,0 +1,221 @@
+---
+title: "Municipal Finance"
+author: "Tommie Thompson, Charter Cities Institute"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#Packages
+  library(readxl)
+  library(ggplot2)
+  library(tidyverse)
+  library(gridExtra)
+
+#Import
+  df <- read_excel("dataset.xlsx")
+```
+
+## Data
+
+```{r data, echo=F}
+print.data.frame(df)
+```
+
+## Figures
+
+```{r cleaning, include=FALSE}
+#Consolidate population
+  df$pop <- ifelse(!is.na(df$pop_2017), df$pop_2017, NA)
+  df$pop <- ifelse(!is.na(df$pop_2018), df$pop_2018, df$pop)
+  df$pop <- ifelse(!is.na(df$pop_2019), df$pop_2019, df$pop)
+
+#debt per capita
+  df$debt_pc <- df$liab_cum_USD/df$pop
+  df$debt_pc <- round(df$debt_pc, 2)
+
+#expenditure per capita
+  df$exp_pc <- df$exp_annual_USD/df$pop
+  df$exp_pc <- round(df$exp_pc, 2)
+
+#Population growth
+  df$pop_gw <- (df$pop_2035 - df$pop)/df$pop*100
+  df$pop_gw <- round(df$pop_gw, 2)
+  
+#population in millions
+  df$pop_inmil <- df$pop/1000000
+  df$pop_inmil <- round(df$pop_inmil, 2)
+  
+#Density
+  df$dens <- df$pop/df$area_sqmi
+  df$dens <- round(df$dens, 2)
+  
+```
+```{r make_plots, include=F}
+#Formatting
+  df$city_africa <- ifelse(df$region=="Africa", df$city, NA)
+  df$city_usa <- ifelse(df$region=="USA", df$city, NA)
+  
+  df$city <- paste0(df$city, " (", df$Year, ")")
+  
+#Plots
+##debt per capita
+    p_debt <- ggplot(data=df, aes(x=debt_pc, y=reorder(city, debt_pc),fill = region)) +
+    geom_bar(stat="identity") +
+    scale_fill_manual(values=c("red", "purple")) +
+    geom_text(aes(label=debt_pc), hjust = -.1, size=3) +
+    scale_x_continuous(limits = c(0, 19000)) +
+    theme(legend.position = "none", plot.title.position = "plot") +
+    labs(
+      title = "Held Municipal Debt",
+      x = "Debt per Capita (USD)",
+      y = "",
+      caption = "Data from CCI dataset."
+    )
+
+##expenditure per capita
+  p_exp <- ggplot(data=df, aes(x=exp_pc, y=reorder(city, exp_pc), fill = region)) +
+    geom_bar(stat="identity") +
+    scale_fill_manual(values=c("red", "purple")) +
+    geom_text(aes(label=exp_pc), hjust = -.1, size=3) +
+    scale_x_continuous(limits = c(0, 12000)) +
+    theme(legend.position = "none", plot.title.position = "plot") +
+    labs(
+      title = "Municipal Expenditure",
+      x = "Expenditure per Capita (USD)",
+      y = "", 
+      caption = "Data from CCI dataset. \n This includes both operational and capital expenses."
+    ) 
+
+#Population
+  p_pop <- ggplot(data=df, aes(x=pop_inmil, y=reorder(city, pop_inmil), fill = region)) +
+    geom_bar(stat="identity") +
+    scale_x_continuous(limits = c(0, 15)) +
+    scale_fill_manual(values=c("red", "purple")) +
+    geom_text(aes(label=pop_inmil), hjust = -.1, size=3) +
+    theme(legend.position = "none", plot.title.position = "plot") +
+    labs(
+      title = "Population",
+      x = "Population (in millions)",
+      y = ""
+    ) 
+  
+#Density
+  p_dens <- ggplot(data=df, aes(x=dens, y=reorder(city, dens), fill = region)) +
+    geom_bar(stat="identity") +
+    scale_fill_manual(values=c("red", "purple")) +
+    scale_x_continuous(limits = c(0, 19000)) +
+    geom_text(aes(label=dens), hjust = -.1, size=3) +
+    theme(legend.position = "none", plot.title.position = "plot") +
+    labs(
+      title = "Municipal Density",
+      x = "People per Square Mile",
+      y = ""
+    )   
+
+  #Urbanization
+  p_urb <- ggplot(data=df, aes(x=pop_gw, y=reorder(city, pop_gw), fill = region)) +
+    geom_bar(stat="identity") +
+    scale_fill_manual(values=c("red", "purple")) +
+    scale_x_continuous(limits = c(0, 110)) +
+    geom_text(aes(label=pop_gw), hjust = -.1, size=3) +
+    theme(legend.position = "none", plot.title.position = "plot") +
+    labs(
+      title = "Urbanization Rate",
+      x = "% Population Growth (Present to 2035)",
+      y = "",
+      caption = "Data from CCI dataset."
+    )   
+  
+##Debt v urbanization
+  p_debt_urb <- ggplot(df, aes(x=debt_pc, y=pop_gw, color=region)) +
+    geom_point(size=2) +
+    scale_color_manual(values=c("red", "purple")) +
+    geom_text(label=df$city_africa, hjust=-.1,  size=3) +
+    geom_text(label=df$city_usa, nudge_y = 3, size=3) +
+    labs(
+      title = "Municipal Debt vs Urbanization",
+      x = "Debt per Capita (USD)",
+      y = "% Population Growth (Present to 2035)"
+    ) +
+    theme(legend.position="none", plot.title.position = "plot")
+
+##Exp v urbanization
+  p_exp_urb <- ggplot(df, aes(x=exp_pc, y=pop_gw, color=region)) +
+    geom_point(size=2) +
+    scale_color_manual(values=c("red", "purple")) +
+    geom_text(label=df$city_africa, hjust=-.1,  size=3) +
+    geom_text(label=df$city_usa, nudge_y = 3, size=3) +
+    labs(
+      title = "Municipal Expenditure vs Urbanization",
+      x = "Expenditure per Capita (USD)",
+      y = "% Population Growth (Present to 2035)"
+    ) +
+  theme(legend.position="none", plot.title.position = "plot")  
+```
+
+# Debt per capita
+
+```{r plot_debt, echo=F, warning=F}
+p_debt
+
+```
+
+# Expenditure per capita
+
+```{r plot_exp, echo=F, warning=F}
+p_exp
+
+```
+
+# Population
+
+```{r plot_pop, echo=F, warning=F}
+grid.arrange(p_pop, p_urb, nrow=2)
+```
+
+# Density
+```{r plot_density, echo=F, warning=F}
+p_dens
+```
+
+
+```{r urbanization_debt, echo=F, warning=F}
+p_debt_urb
+```
+
+```{r urbanization_exp, echo=F, warning=F}
+p_exp_urb
+```
+
+## Revenue Sources
+
+```{r rev, include=F}
+#Data generation
+  country <- c("USA (2018)", "West Africa (2010)", "Central Africa (2010)", "East Africa (2010)", "Southern Africa (2010)")
+  order <- c(1, 3, 4, 5, 2)
+  value <- c(21.7, 6.2, 5.8, 5.7, 24.6)
+  df_inc <- cbind(country, value, order)%>% as.data.frame()
+  df_inc$value <- as.numeric(df_inc$value)
+  df_inc$order <- as.numeric(df_inc$order)
+  
+#Plot
+  p_rev <- ggplot(df_inc, aes(x=reorder(country, order), y=value)) + 
+    geom_bar(stat="identity")+
+    scale_y_continuous(limits = c(0, 38)) +
+    geom_text(label=value, vjust=-1) +
+    theme(legend.position = "none", plot.title.position = "plot") +
+    labs(
+      title="Local Budgets as a Proportion of National Government Budget",
+      x="",
+      y="%",
+      caption = "USA data from Tax Policy Center (2020). \n Africa data from Paulais (2012, Table 3.3)."
+    )
+```
+
+```{r plot_rev, warning=F, echo=F}
+p_rev
+```
+
+
