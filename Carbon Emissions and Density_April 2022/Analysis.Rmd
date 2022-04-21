@@ -1,0 +1,240 @@
+---
+title: "Carbon Emissions"
+author: "Tommie Thompson"
+date: "4/18/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#Packages
+  library(readxl)
+  library(ggplot2)
+  library(ggpubr)
+  library(tidyverse)
+  library(gridExtra)
+```
+
+```{r import, include=F}
+#import 
+  df <- read_excel("Data.xlsx")
+
+#reconcile population
+  df$population <- ifelse(is.na(df$`Population (CDP)`), df$`Population (carbonn)`, df$`Population (CDP)`)
+  df$population <- ifelse(is.na(df$population), df$`Urban population (PKU)`, df$population)
+  df$population <- ifelse(is.na(df$population), df$`Population (GEA)`, df$population)
+  df$population <- ifelse(is.na(df$population), df$`Population (WB)`, df$population)
+  df$population <- ifelse(is.na(df$population), df$`Population (others)`, df$population)
+    
+#reconcile area
+  df$area_sqkm <- ifelse(is.na(df$`City area (CDP) [km2]`), df$`Urban population (PKU)`, df$`City area (CDP) [km2]`)
+  df$area_sqkm <- ifelse(is.na(df$area_sqkm), df$`City area (GEA) [km2]`, df$area_sqkm)
+  df$area_sqkm <- ifelse(is.na(df$area_sqkm), df$`City area (WB) [km2]`, df$area_sqkm)
+  df$area_sqkm <- ifelse(is.na(df$area_sqkm), df$`City area (others) [km2]`, df$area_sqkm)
+  
+#filter  
+  df <- select(df, "City name", "Country", "Region", "Scope-1 GHG emissions [tCO2 or tCO2-eq]", population, area_sqkm)
+  
+  df <- rename(df, 
+               city = "City name",
+               country = "Country",
+               region = "Region",
+               ghg_scope1 = "Scope-1 GHG emissions [tCO2 or tCO2-eq]")
+  
+#per capita variables
+  df$density <- df$population/df$area_sqkm
+  df$ghg_pc <- df$ghg_scope1/df$population
+  
+#remove non-complete observations
+  df <- na.omit(df)
+  
+#Global South indicator
+  df$region2 <- ifelse(df$region %in% c("Africa", "Latin America & Caribbean", "North Africa, Middle East, West Asia", "SOuth Asia", "Southeast Asia"), "South", "North")
+  df$region2 <- ifelse(df$country %in% c("Singapore", "Israel"), "North", df$region2)
+  df$region2 <- ifelse(df$country %in% c("China", "India"), "South", df$region2)
+  
+#Collapse regions
+  df$region <- ifelse(df$region %in% c("East Asia", "South Asia", "Southeast Asia"), "Asia", df$region)
+  df$region <- ifelse(df$region=="North Africa, Middle East, West Asia", "MENA", df$region)
+  df$region <- ifelse(df$region=="Latin America & Caribbean", "Latin America", df$region)
+  
+#New region cateogries
+  df$region3 <- df$region
+  df$region3 <- ifelse(df$region3 %in% c("Europe", "North America", "Oceania"), "West", df$region3)
+  df$region3 <- ifelse(df$region3=="MENA", NA, df$region3)
+  df$region3 <- ifelse(df$region3=="Africa", "Sub-Saharan Africa", df$region3)
+  
+  df$region3[df$region3=="Asia"] <- "Asia (n=142)"
+  df$region3[df$region3=="Latin America"] <- "Latin America (n=30)"
+  df$region3[df$region3=="Sub-Saharan Africa"] <- "Sub-Saharan Africa (n=12)"
+  df$region3[df$region3=="West"] <- "West (n=118)"
+  
+#Drop outliers
+  df <- subset(df, city!="León de los Aldamas" & city!="Quezon")
+  
+#Only keep cities 100,000 or higher
+  df <- df[df$population>=100000,]
+  
+#Export
+  write.csv(df, "Data_Clean.csv")
+```
+
+## Data Preview
+
+```{r data_preview, echo=T}
+head(df)
+nrow(df)
+table(df$region)
+table(df$region2)
+df_region <- df %>% group_by(region3) %>% summarise_at(vars(ghg_pc, density), mean)
+df_region$region3 <- ifelse(df_region$region3=="Sub-Saharan Africa", "Africa", df_region$region3)
+df_region <- df_region[!is.na(df_region$region3),]
+df_region
+
+
+```
+
+## Figures
+
+```{r plot_design, include=F}
+#Development Level
+plot1 <- ggplot(df, aes(x=density, y=ghg_pc, color=region2)) +
+            geom_point() +
+            scale_color_discrete(name = "Region") +
+            labs(title = "Carbon Emissions vs Urban Density", 
+                 x="Density (pop/km2)", 
+                 y="Carbon Emissions (CO2) per Capita",
+                 caption = "Source: (Nangini et. al., 2019)"
+                 ) +
+            stat_cor(method = "pearson") +
+            geom_smooth(method=lm, se=F) 
+
+#Region
+plot2 <- ggplot(df, aes(x=density, y=ghg_pc, color=region)) +
+            geom_point() +
+            scale_color_discrete(name = "Region") +
+            labs(title = "Carbond Emissions by Urban Density", x="Density (pop/km2)", y="Carbon Emissions per Capita (CO2)") 
+
+#Global North
+ plot3 <- ggplot(df[df$region2=="South",], aes(x=density, y=ghg_pc)) +
+            geom_point() +
+            labs(title = "Carbond Emissions by Urban Density (Global South)", x="Density (pop/km2)", y="Carbon Emissions per Capita (CO2)") 
+ 
+#Global South
+plot4 <- ggplot(df[df$region2=="North",], aes(x=density, y=ghg_pc)) +
+            geom_point() +
+            labs(title = "Carbond Emissions by Urban Density (Global North)", x="Density (pop/km2)", y="Carbon Emissions per Capita (CO2)")    
+
+#West
+plot5 <- ggplot(df[df$region %in% c("Europe", "Oceania", "North America"),], aes(x=density, y=ghg_pc)) +
+            geom_point() +
+            labs(title = "Carbon Emissions vs Urban Density",
+                 subtitle = "West",
+                 x="Density (pop/km2)", 
+                 y="Carbon Emissions (CO2) per Capita",
+                 caption = "Source: (Nangini et. al., 2019)"
+                 ) +
+            stat_cor(method = "pearson") 
+
+#Asia
+plot6 <- ggplot(df[df$region=="Asia",], aes(x=density, y=ghg_pc)) +
+            geom_point() +
+            labs(title = "Carbon Emissions vs Urban Density",
+                 subtitle = "Asia",
+                 x="Density (pop/km2)", 
+                 y="Carbon Emissions (CO2) per Capita",
+                 caption = "Source: (Nangini et. al., 2019)"
+                 ) +
+            stat_cor(method = "pearson") 
+
+#Latin America
+plot7 <- ggplot(df[df$region=="Latin America",], aes(x=density, y=ghg_pc)) +
+            geom_point() +
+            labs(title = "Carbon Emissions vs Urban Density",
+                 subtitle = "Latin America",
+                 x="Density (pop/km2)", 
+                 y="Carbon Emissions (CO2) per Capita",
+                 caption = "Source: (Nangini et. al., 2019)"
+                 ) +
+            stat_cor(method = "pearson") 
+
+#MENA
+plot8 <- ggplot(df[df$region=="MENA",], aes(x=density, y=ghg_pc)) +
+            geom_point() +
+            labs(title = "Carbon Emissions vs Urban Density",
+                 subtitle = "MENA",
+                 x="Density (pop/km2)", 
+                 y="Carbon Emissions (CO2) per Capita",
+                 caption = "Source: (Nangini et. al., 2019)"
+                 ) +
+            stat_cor(method = "pearson") 
+
+#Sub-Saharan Africa
+plot9 <- ggplot(df[df$region=="Africa",], aes(x=density, y=ghg_pc)) +
+            geom_point() +
+            labs(title = "Carbon Emissions vs Urban Density",
+                 subtitle = "Sub-Saharan Africa",
+                 x="Density (pop/km2)", 
+                 y="Carbon Emissions (CO2) per Capita",
+                 caption = "Source: (Nangini et. al., 2019)"
+                 ) +
+            stat_cor(method = "pearson") 
+
+#Grid by region
+plot10 <- ggplot(df[!is.na(df$region3),], aes(x=density, y=ghg_pc)) +
+            geom_point(color="darkred") +
+            labs(title = "Carbon Emissions vs Urban Density", 
+                 x="Density (pop/km2)", 
+                 y="Carbon Emissions (CO2) per Capita",
+                 caption ="Source: (Nangini et. al., 2019) \n MENA excluded due to small n",
+                 ) +
+            stat_cor(method = "pearson") +
+            geom_smooth(method=lm, se=F) +
+            facet_wrap(~region3, nrow=2, ncol=2)
+
+#Region averages
+plot11 <- ggplot(df_region, aes(x=density, y=ghg_pc, label=region3)) +
+            geom_point() +
+            geom_text(size = 2.5, vjust = 2) +
+            labs(title = "Carbon Emissions vs Urban Density", 
+                 x="Density (pop/km2)", 
+                 y="Carbon Emissions (CO2) per Capita",
+                 caption = "Source: (Nangini et. al., 2019)"
+                 ) 
+
+#Most polluted in Africa
+bar1 <- slice_min(df[df$region=="Europe",], n=5, ghg_pc) %>%
+          ggplot(aes(y=reorder(city, ghg_pc), x=ghg_pc)) + 
+            geom_bar(stat='identity') +
+             labs(title = "Least Polluted Cities in Europe",
+                  y="Cities",
+                  x="Carbon Emissions (CO2) per Capita",                 
+                  caption ="Source: (Nangini et. al., 2019) \n MENA excluded due to small n",
+                 )
+
+bar2 <- slice_min(df[df$region=="Africa",], n=5, ghg_pc) %>%
+          ggplot(aes(y=reorder(city, ghg_pc), x=ghg_pc)) + 
+            geom_bar(stat='identity') +
+             labs(title = "Least Polluted Cities in Africa",
+                  y="Cities",
+                  x="Carbon Emissions (CO2) per Capita",
+                  caption = "Source: (Nangini et. al., 2019)"
+                 )
+```
+
+```{r figure, echo=F}
+plot1
+plot5
+plot6
+plot7
+plot8 
+plot9
+
+plot10
+grid.arrange(bar1, bar2, ncol=1)
+
+plot11
+
+```
+
